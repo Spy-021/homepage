@@ -178,20 +178,21 @@ onBeforeMount(() => {
     if (message.status === 'success') {
       items.value.length = 0 // reset
 
-      if (!DEV_MODE) {
-        for (let i = 0; i < payload.data.length * 3; i++) {
-          // items.value.push(
-          //   ...payload.data.map((card) => ({ orig: card, display: true, item: prepareCardValues({ ...card }) }))
-          // )
-          items.value.push(
-            ...payload.data.map((card) => {
-              count++
-              if (count % 2 === 0) card.dateAdded = new Date('2022-11-12')
-              return { orig: card, display: true, item: prepareCardValues({ ...card }) }
-            })
-          )
+      if (DEV_MODE) {
+        items.value = payload.data.map((card) => ({ orig: card, display: true, item: prepareCardValues(deepClone(card)) }))
+        // for (let i = 0; i < payload.data.length * 3; i++) {
+        //   // items.value.push(
+        //   //   ...payload.data.map((card) => ({ orig: card, display: true, item: prepareCardValues({ ...card }) }))
+        //   // )
+        //   items.value.push(
+        //     ...payload.data.map((card) => {
+        //       count++
+        //       if (count % 2 === 0) card.dateAdded = new Date('2022-11-12')
+        //       return { orig: card, display: true, item: prepareCardValues({ ...card }) }
+        //     })
+        //   )
 
-        }
+        // }
       } else {
         items.value = payload.data.map((card) => ({ orig: card, display: true, item: prepareCardValues(deepClone(card)) }))
       }
