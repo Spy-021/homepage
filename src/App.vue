@@ -8,7 +8,7 @@
     <div class="page">
       <!-- flex-grow -->
       <div class="page-content">
-        <div class="xl-font-size text-white">dev articles</div>
+        <div class="font-size-xl text-white">dev articles</div>
         <div class="menu bg-white">
           <span class="menu-items">
             <img src="@/assets/search-icon.svg" alt=""/>
@@ -40,11 +40,12 @@
             <label class="text-accent" for="checkbox">Latest only</label>
           </span>
         </div>
-        <div class="cards-container bg-primary">
+        <!-- bg-primary -->
+        <div class="cards-container">
           <CardItem
-            v-for="(itm, i) of items"
+            v-for="(obj, i) of filteredItems"
             :key="i"
-            :item="itm"
+            :item="obj.item"
           />
         </div>
       </div>
@@ -53,39 +54,121 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue' // , computed
+import { ref, computed, onBeforeMount } from 'vue' // , computed, onMounted
 import CardItem from '@/components/CardItem.vue'
 import axios from 'axios'
 
 const DEV_MODE = process.env.NODE_ENV !== 'production'
 const API_URI = DEV_MODE
-  ? 'http://localhost:8080/api.json'
+  ? 'http://localhost:8080/real_data.json'
   : 'https://myposter.de/web-api/job-interview'
 
 const filterText = ref('')
-const latestCheckbox = ref('')
+const latestCheckbox = ref(false)
 const sortOption = ref('')
 const options = [
   {
     text: 'Authors A - Z',
-    value: 'authorAZ'
+    value: 'author-asc'
   },
   {
     text: 'Authors Z - A',
-    value: 'authorZA'
+    value: 'author-desc'
   },
   {
     text: 'Date ASC',
-    value: 'dateASC'
+    value: 'dateAdded-asc'
   },
   {
     text: 'Date DESC',
-    value: 'dateDESC'
+    value: 'dateAdded-desc'
   }
 ]
-const items = ref([])
 
-onMounted(() => {
+const items = ref([])
+const dateLastYear = (() => {
+  const nD = new Date()
+  return nD.setFullYear(nD.getFullYear() - 1) && nD
+})()
+
+// debounced!
+const filteredItems = computed(() => {
+  // step 1 => filter title
+  // step 2 => if latest one year ?
+  // step 3 => sort
+  // console.log('sortOption', sortOption.value) // last step is sorting!
+  // console.log('latestCheckbox', latestCheckbox.value)
+
+  const filtered = items.value.filter((c) => {
+    const titleAuthorFiltered = !filterText.value || (c.orig.author.includes(filterText.value) || c.orig.title.includes(filterText.value))
+    const latestFiltered = !latestCheckbox.value || (() => {
+      const registDate = new Date(c.orig.dateAdded)
+      return !isNaN(registDate.getTime()) && dateLastYear < registDate
+    })()
+
+    return titleAuthorFiltered && latestFiltered
+  })
+
+  const [sortBy, dir ] = (() => {
+    const [sortBy, asc ] = sortOption.value.split('-')
+    return [sortBy, (asc === 'asc' ? 1 : -1) ]
+  })()
+  // console.log('sortBy', sortBy)
+  // console.log('dir', dir)
+
+  return !sortOption.value ? filtered : filtered.sort((a, b) => {
+    const [A, B] = [a.orig[sortBy], b.orig[sortBy]]
+    if (A < B) return -1 * dir
+    if (A > B) return 1 * dir
+    return 0
+  })
+})
+
+function capStr (s) {
+  return s.charAt(0)?.toUpperCase() + s.slice(1) || s // fallback if empty str!
+}
+
+function capAuthor (p) {
+  return p.trim().split(' ').map((s) => capStr(s)).join(' ')
+}
+
+const dateFormatter = new Intl.DateTimeFormat('default', { day: 'numeric',  month: 'short' }) // year: 'numeric'
+function dateConverter (d) { // d => dateString e.g. '1970-01-01'
+  const md = new Date(d) // myDate
+  if (isNaN(md.getTime())) return d
+
+  // de-DE, default
+  // formatToParts or reverse it!
+  const res = dateFormatter.format(md).split(' ').reverse().join(' ')
+  return res
+}
+
+function getAuthorAbrev (p) {
+  if (!(typeof p === 'string' && p.length > 0)) return 'N/A'
+
+  // console.log('func getAuthorAbrev', p)
+  const firstLetters = p.trim().split(' ').map((e) => e[0]).join('')
+
+  // What about people with 3+ names ?! // {2,}
+  if (/^[a-zA-Z]{2}$/.test(firstLetters)) return firstLetters.toUpperCase()
+  return 'N/A'
+}
+
+let count = 0
+function prepareCardValues (p) {
+  // p.author = capAuthor('pan max' + ++count)
+  p.author = capAuthor(p.author)
+  p.dateAdded = dateConverter(p.dateAdded)
+  p.avatar = getAuthorAbrev(p.author)
+  p.title = capStr(p.title)
+  return p
+}
+
+function deepClone (p) {
+  return JSON.parse(JSON.stringify(p))
+}
+
+onBeforeMount(() => {
   axios({
     method: 'get',
     url: API_URI
@@ -93,16 +176,31 @@ onMounted(() => {
     const { message, payload } = data
     // console.log('fetch message', message)
     if (message.status === 'success') {
-      if (DEV_MODE) {
-        console.log('first item', payload.data[0])
+      items.value.length = 0 // reset
+
+      if (!DEV_MODE) {
         for (let i = 0; i < payload.data.length * 3; i++) {
-          items.value.push(...payload.data)
+          // items.value.push(
+          //   ...payload.data.map((card) => ({ orig: card, display: true, item: prepareCardValues({ ...card }) }))
+          // )
+          items.value.push(
+            ...payload.data.map((card) => {
+              count++
+              if (count % 2 === 0) card.dateAdded = new Date('2022-11-12')
+              return { orig: card, display: true, item: prepareCardValues({ ...card }) }
+            })
+          )
+
         }
       } else {
-        items.value = payload.data
+        items.value = payload.data.map((card) => ({ orig: card, display: true, item: prepareCardValues(deepClone(card)) }))
       }
     }
     // console.log('fetch payload', payload)
+    // console.log('first item', items.value[0])
+
+  }).catch((err) => {
+    console.warn('fecth data failed', err)
   })
 })
 </script>
@@ -161,6 +259,7 @@ input[type="checkbox"]:checked::before {
 .menu-items {
   display: flex;
   align-items: center;
+  justify-content: center;
   font-size: 1rem;
 }
 .menu-items > * + * {
@@ -197,7 +296,7 @@ input[type="checkbox"]:checked::before {
   border-radius: .3rem;
   padding: 1.5rem;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(auto, 1fr));
 }
 .menu-items + .menu-items {
   margin-left: .75rem;
@@ -207,7 +306,7 @@ input[type="checkbox"]:checked::before {
   position: absolute;
   /* padding: 1rem; */
   height: 100vh;
-  width: 100vw;
+  width: 100%;
   top: 0;
   left: 0;
 
@@ -236,6 +335,7 @@ input[type="checkbox"]:checked::before {
 
 .cards-container {
   margin-top: 2rem;
+  margin-bottom: 2rem;
   display: grid;
   row-gap: 1.75rem;
   column-gap: 1rem;
@@ -243,12 +343,15 @@ input[type="checkbox"]:checked::before {
 }
 
 /** Mobile */
-@media (max-width: 767px) {
+@media (min-width: 320px) and (max-width: 767px) {
   .menu {
     grid-template-columns: repeat(1, minmax(0, 1fr));
   }
+  .menu-items {
+    justify-content: flex-start;
+  }
   .menu-items + .menu-items {
-    margin-top: .75rem;
+    margin-top: 1.25rem;
   }
 
   .cards-container {
